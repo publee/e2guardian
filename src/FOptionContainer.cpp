@@ -944,7 +944,7 @@ bool FOptionContainer::read(const char *filename)
                 return false;
             } // url exceptions
             exception_url_flag = true;
-            if (!readFile(banned_site_list_location.c_str(), &banned_site_list, false, true, "bannedsitelist")) {
+            if (!readFile(banned_site_list_location.c_str(), &banned_site_list, true, true, "bannedsitelist")) {
                 return false;
             } // banned domains
             banned_site_flag = true;

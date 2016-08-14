@@ -84,11 +84,11 @@ void ListContainer::reset()
     graphused = false;
     force_quick_search = 0;
     /*sthour = 0;
-	stmin = 0;
-	endhour = 0;
-	endmin = 0;
-	days = "";
-	timetag = "";*/
+    stmin = 0;
+    endhour = 0;
+    endmin = 0;
+    days = "";
+    timetag = "";*/
     category = "";
     istimelimited = false;
     combilist.clear();
@@ -367,20 +367,21 @@ bool ListContainer::ifsreadItemList(std::ifstream *input, int len, bool checkend
             }
             continue; // it's a comment
         }
-
-        // blanket block flags
-        if (temp.startsWith("**s")) {
-            blanketsslblock = true;
-            continue;
-        } else if (temp.startsWith("**ips")) {
-            blanketssl_ip_block = true;
-            continue;
-        } else if (temp.startsWith("**")) {
-            blanketblock = true;
-            continue;
-        } else if (temp.startsWith("*ip")) {
-            blanket_ip_block = true;
-            continue;
+        if (linebuffer[0] == '*') {
+            // blanket block flags
+            if (temp.startsWith("**s")) {
+                blanketsslblock = true;
+                continue;
+            } else if (temp.startsWith("**ips")) {
+                blanketssl_ip_block = true;
+                continue;
+            } else if (temp.startsWith("**")) {
+                blanketblock = true;
+                continue;
+            } else if (temp.startsWith("*ip")) {
+                blanket_ip_block = true;
+                continue;
+            }
         }
 
         // Strip off comments that don't necessarily start at the beginning of a line
@@ -420,19 +421,35 @@ bool ListContainer::ifsreadItemList(std::ifstream *input, int len, bool checkend
             temp = temp.after("ftp://"); // tidy up
         }
         if (filters == 1) { // remove port addresses
-            if (temp.before("/").contains(":")) { // quicker than full regexp
-                if (re.match(temp.toCharArray())) {
-                    hostname = temp.before(":");
-                    url = temp.after("/");
-                    temp = hostname + "/" + url;
+            std::string::size_type pos = temp.find('/');// quicker than full regexp
+            if (pos != std::string::npos) {
+                std::string::size_type pos2 = temp.find(':');// quicker than full regexp
+                if (pos2 != std::string::npos && pos2 < pos) {
+                    if (re.match(temp.toCharArray())) {
+                        hostname = temp.before(":");
+                        url = temp.after("/");
+                        temp = hostname + "/" + url;
+                    }
                 }
             }
         }
         if (filters != 32) {
             temp.toLower(); // tidy up - but don't make regex lists lowercase!
         }
-        if (temp.length() > 0)
+        if (temp.length() > 0){
+            if (data_length > 10000 && list.capacity() == list.size() + 1){
+                //optimise re-allocation, because push_back can be very slow
+                int estimate = (len * list.size()) / data_length;
+                int percent = list.size() / 10;
+                if (estimate < list.capacity() + percent) estimate = list.capacity() + percent;
+#ifdef DGDEBUG
+                //std::cout << "Resize lists, estimate: " << estimate << std::endl;
+#endif
+                list.reserve(estimate);
+                lengthlist.reserve(estimate);
+            }
             addToItemList(temp.toCharArray(), temp.length()); // add to unsorted list
+        }
     }
 #ifdef DGDEBUG
     std::cout << "Blanket flags set:" << blanketblock << ":" << blanket_ip_block << ":" << blanketsslblock << ":" << blanketssl_ip_block << std::endl;
@@ -442,6 +459,9 @@ bool ListContainer::ifsreadItemList(std::ifstream *input, int len, bool checkend
 
 bool ListContainer::ifsReadSortItemList(std::ifstream *input, bool checkendstring, const char *endstring, bool do_includes, bool startswith, int filters, const char *filename)
 {
+#ifdef DGDEBUG
+    std::cout << "ifsReadSortItemList:" << filename << std::endl;
+#endif
     size_t len = 0;
     try {
         len = getFileLength(filename);
@@ -485,6 +505,7 @@ bool ListContainer::readItemList(const char *filename, bool startswith, int filt
             return false;
         filedate = getFileDate(linebuffer.c_str());
         issorted = true; // don't bother sorting cached file
+        isSW = startswith;
         return true;
     }
     filedate = getFileDate(filename);
@@ -835,7 +856,8 @@ struct lessThanSWF : public std::binary_function<const size_t &, const size_t &,
     {
         const char *a = data + aoff;
         const char *b = data + boff;
-        size_t alen = strlen(a);
+        //return strcmp(a,b) > 0; //why not use strcmp?
+                size_t alen = strlen(a);
         size_t blen = strlen(b);
         size_t maxlen = (alen < blen) ? alen : blen;
         for (size_t i = 0; i < maxlen; i++)
@@ -859,10 +881,16 @@ void ListContainer::doSort(const bool startsWith)
     if (items < 2 || issorted)
         return;
     if (startsWith) {
+#ifdef DGDEBUG
+    std::cout << "doSort SWF, items count:" << list.size() << std::endl;
+#endif
         lessThanSWF lts;
         lts.data = data;
         std::sort(list.begin(), list.end(), lts);
     } else {
+#ifdef DGDEBUG
+    std::cout << "doSort EWF, items count:" << list.size() << std::endl;
+#endif
         lessThanEWF lte;
         lte.data = data;
         std::sort(list.begin(), list.end(), lte);
@@ -1563,27 +1591,40 @@ bool ListContainer::readProcessedItemList(const char *filename, bool startswith,
             continue; // it's a comment man
         }
         // blanket block flags
-        if (temp.startsWith("**s")) {
-            blanketsslblock = true;
-            continue;
-        } else if (temp.startsWith("**ips")) {
-            blanketssl_ip_block = true;
-            continue;
-        } else if (temp.startsWith("**")) {
-            blanketblock = true;
-            continue;
-        } else if (temp.startsWith("*ip")) {
-            blanket_ip_block = true;
-            continue;
+        if (linebuffer[0] == '*') {
+            if (temp.startsWith("**s")) {
+                blanketsslblock = true;
+                continue;
+            } else if (temp.startsWith("**ips")) {
+                blanketssl_ip_block = true;
+                continue;
+            } else if (temp.startsWith("**")) {
+                blanketblock = true;
+                continue;
+            } else if (temp.startsWith("*ip")) {
+                blanket_ip_block = true;
+                continue;
+            }
         }
         slen = linebuffer.length();
         if (slen < 3)
             continue;
+        
+        if (data_length > 10000 && list.capacity() == list.size() + 1){
+                //optimise re-allocation, because push_back can be very slow
+                int estimate = (len * list.size()) / data_length;
+                int percent = list.size() / 10;
+                if (estimate < list.capacity() + percent) estimate = list.capacity() + percent;
+#ifdef DGDEBUG
+                std::cout << "Resize lists, estimate: " << estimate << std::endl;
+#endif
+                list.reserve(estimate);
+                lengthlist.reserve(estimate);
+            }
+        
         list.push_back(data_length);
         lengthlist.push_back(slen);
-        for (size_t i = 0; i < slen; i++) {
-            data[data_length + i] = linebuffer[i];
-        }
+        memcpy(data + data_length, linebuffer.c_str(), slen * sizeof(char));
         data[data_length + slen] = 0;
         data_length += slen + 1;
         items++;
@@ -1594,11 +1635,17 @@ bool ListContainer::readProcessedItemList(const char *filename, bool startswith,
 
 void ListContainer::addToItemList(const char *s, size_t len)
 {
+#ifdef DGDEBUG
+    std::vector<int>::size_type sz = list.capacity();
+#endif
     list.push_back(data_length);
     lengthlist.push_back(len);
-    for (size_t i = 0; i < len; i++) {
-        data[data_length + i] = s[i];
+#ifdef DGDEBUG
+    if (sz!=list.capacity()) {
+      std::cout << "list capacity changed: " << list.capacity() << '\n';
     }
+#endif
+    memcpy(data + data_length, s, len * sizeof(char));
     data[data_length + len] = 0;
     data_length += len + 1;
     items++;
